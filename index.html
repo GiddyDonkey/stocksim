@@ -173,16 +173,21 @@ const Store = {
 };
 
 /* ════════════════ finnhub ════════════════ */
+/* Maps stored tickers to the symbols Finnhub expects, for API calls ONLY.
+   The stored ticker and the on-screen label are never changed by this. */
+const FINNHUB_SYMBOL = { ETH:"BINANCE:ETHUSDT", BIT:"BINANCE:BTCUSDT" };
+const toFinnhub = sym => FINNHUB_SYMBOL[(sym||"").trim().toUpperCase()] || sym;
+
 async function quote(sym, key){
   if (!key) throw new Error("no-key");
-  const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym.toUpperCase())}&token=${key}`);
+  const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(toFinnhub(sym).toUpperCase())}&token=${key}`);
   const j = await r.json();
   if (j && typeof j.c==="number" && j.c>0) return { price:j.c, prevClose:typeof j.pc==="number"?j.pc:j.c };
   throw new Error("no-quote");
 }
 async function lookup(q, key){
   if (!key) throw new Error("no-key");
-  const r = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`);
+  const r = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(toFinnhub(q))}&token=${key}`);
   const j = await r.json();
   return (j.result||[]).filter(x=>x.symbol && !x.symbol.includes(".")).slice(0,8);
 }
@@ -199,7 +204,8 @@ function metrics(d){
   const total=invested+d.cash;
   const net=total-(d.totalDeposited||0), netPct=d.totalDeposited?net/d.totalDeposited*100:0;
   const day=holdings.reduce((s,h)=>s+h.day,0);
-  return { holdings, invested, total, net, netPct, day };
+  const dayBase=total-day, dayPct=dayBase>0?day/dayBase*100:0;
+  return { holdings, invested, total, net, netPct, day, dayPct };
 }
 
 /* ════════════════ tiny icons (inline svg) ════════════════ */
@@ -331,7 +337,14 @@ function App(){
     if (!d.apiKey){ if(!silent) flash("Add a price key in Settings"); return; }
     setBusy(true); let fail=0;
     const positions = await Promise.all(d.positions.map(async p=>{
-      try{ const q=await quote(p.ticker, d.apiKey); return {...p, lastPrice:q.price, prevClose:q.prevClose, lastPriceAt:Date.now()}; }
+      try{
+        const q=await quote(p.ticker, d.apiKey);
+        // bad-data guard: drop null / non-positive / wildly-low (<1% of last) prices
+        // so a crypto or mismatched fetch can't zero out a holding — keep the old price.
+        const prev=p.lastPrice;
+        if (q.price==null || q.price<=0 || (prev>0 && q.price < prev*0.01)){ fail++; return p; }
+        return {...p, lastPrice:q.price, prevClose:q.prevClose, lastPriceAt:Date.now()};
+      }
       catch(e){ fail++; return p; }
     }));
     const next={...d, positions};
@@ -443,7 +456,7 @@ function App(){
     </div>
   );
 }
-function nameTitle(t){ return t==="portfolio"?"Portfolio":"History"; }
+function nameTitle(t){ return t==="portfolio"?"Asher's Portfolio":"History"; }
 
 /* ── small chrome ── */
 function Center({ children }){ return <div style={{height:"80vh", display:"grid", placeItems:"center", color:"var(--sub)"}}>{children}</div>; }
@@ -466,6 +479,14 @@ function Field({ label, children }){ return <label style={{display:"block", marg
 /* ════════════════ Portfolio page ════════════════ */
 function Portfolio({ doc, m, busy, onRefresh, onSearchBuy, onTrade, onRequest, onHolding }){
   const up = m.net>=0;
+  const dayUp = m.day>=0;
+  const [chartView, setChartView] = useState("all");   // "1D" | "all"
+  // "All-time" uses the saved daily history; "1D" is a 2-point line from
+  // yesterday's close (total − today's change) to the current total.
+  const chartPoints = chartView==="1D"
+    ? [{day:"open", total:+(m.total-m.day).toFixed(2)}, {day:"now", total:+m.total.toFixed(2)}]
+    : doc.valueHistory;
+  const chartUp = chartView==="1D" ? dayUp : up;
   const segs = [...m.holdings].sort((a,b)=>b.value-a.value).map((h,i)=>({label:nameOf(h.ticker), value:h.value, color:PALETTE[i%PALETTE.length]}));
   if (doc.cash>0) segs.push({label:"Cash", value:doc.cash, color:"#C7CDD6"});
   return (
@@ -476,11 +497,22 @@ function Portfolio({ doc, m, busy, onRefresh, onSearchBuy, onTrade, onRequest, o
       <div className="card" style={{padding:"18px 18px 8px", marginBottom:14}}>
         <div className="lbl">Total value</div>
         <div style={{fontFamily:"Fraunces, serif", fontSize:38, fontWeight:600, letterSpacing:"-.5px", margin:"2px 0 8px"}}>{usd(m.total)}</div>
-        <div style={{display:"flex", gap:10, alignItems:"center", marginBottom:6}}>
+        <div style={{display:"flex", gap:8, alignItems:"center", marginBottom:6, flexWrap:"wrap"}}>
           <span className={up?"pill pup":"pill pdn"}>{up?<I.up/>:<I.down/>}{usd(m.net)} ({pct(m.netPct)})</span>
           <span style={{fontSize:12, color:"var(--sub)"}}>all-time</span>
+          <span className={dayUp?"pill pup":"pill pdn"}>{dayUp?<I.up/>:<I.down/>}{usd(m.day)} ({pct(m.dayPct)})</span>
+          <span style={{fontSize:12, color:"var(--sub)"}}>today</span>
         </div>
-        <AreaChart points={doc.valueHistory} up={up}/>
+        <div className="row-between" style={{marginTop:6, marginBottom:2}}>
+          <span/>
+          <div style={{display:"flex", background:"var(--surface-2)", borderRadius:9, padding:3}}>
+            {[["1D","1D"],["all","All-time"]].map(([k,l])=>(
+              <button key={k} onClick={()=>setChartView(k)} style={{padding:"4px 11px", borderRadius:7, border:"none", fontSize:11.5, fontWeight:600,
+                background:chartView===k?"#fff":"transparent", color:chartView===k?"var(--ink)":"var(--sub)"}}>{l}</button>
+            ))}
+          </div>
+        </div>
+        <AreaChart points={chartPoints} up={chartUp}/>
       </div>
 
       {/* cash + today */}
