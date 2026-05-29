@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<title>Practice Investing</title>
+
+<!--
+  ╔══════════════════════════════════════════════════════════════════╗
+  ║  SETUP — to make this work remotely on his phone (3 steps)         ║
+  ║                                                                    ║
+  ║  1. In Supabase, run this SQL once (SQL editor):                   ║
+  ║                                                                    ║
+  ║     create table if not exists portfolio (                        ║
+  ║       id text primary key,                                        ║
+  ║       data jsonb not null,                                        ║
+  ║       updated_at timestamptz default now()                        ║
+  ║     );                                                            ║
+  ║     alter table portfolio enable row level security;             ║
+  ║     create policy "family access" on portfolio                    ║
+  ║       for all using (true) with check (true);                     ║
+  ║                                                                    ║
+  ║  2. Paste your Project URL + anon public key below (CONFIG).      ║
+  ║                                                                    ║
+  ║  3. Deploy this single file (Vercel: drag the folder, or          ║
+  ║     `npx vercel --prod`). Open the URL on any phone.              ║
+  ║                                                                    ║
+  ║  Live prices: free key at finnhub.io → paste in Settings in-app.  ║
+  ║  (Leave CONFIG blank to just preview the design locally.)         ║
+  ╚══════════════════════════════════════════════════════════════════╝
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+<style>
+  :root{
+    --bg:#F5F6F8; --surface:#FFFFFF; --surface-2:#F2F4F7; --border:#E7E9EE;
+    --ink:#181B21; --sub:#6E7782; --faint:#9AA1AC;
+    --accent:#2B59C3; --accent-soft:#EAF0FC;
+    --up:#138A5E; --up-soft:#E7F4EE; --down:#CB3B47; --down-soft:#FBEBEC;
+    --shadow:0 1px 2px rgba(16,24,40,.05), 0 4px 16px rgba(16,24,40,.04);
+    --mono:'Spline Sans Mono', ui-monospace, monospace;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0; background:var(--bg);}
+  body{font-family:'Plus Jakarta Sans', system-ui, sans-serif; color:var(--ink);
+       -webkit-font-smoothing:antialiased;}
+  #root{max-width:480px; margin:0 auto; min-height:100vh;}
+  button{font-family:inherit; cursor:pointer;}
+  input{font-family:inherit;}
+  .num{font-family:var(--mono); font-variant-numeric:tabular-nums;}
+  .scroll{padding:18px 16px 110px;}
+  .card{background:var(--surface); border:1px solid var(--border); border-radius:18px; box-shadow:var(--shadow);}
+  .btn{border:none; border-radius:13px; padding:13px 16px; font-size:15px; font-weight:600; transition:transform .08s, opacity .15s;}
+  .btn:active{transform:scale(.97);}
+  .btn:disabled{opacity:.4;}
+  .btn-pri{background:var(--accent); color:#fff;}
+  .btn-up{background:var(--up); color:#fff;}
+  .btn-down{background:var(--down); color:#fff;}
+  .btn-ghost{background:var(--surface); color:var(--ink); border:1px solid var(--border);}
+  .btn-soft{background:var(--surface-2); color:var(--ink);}
+  .btn-sm{padding:8px 0; font-size:13.5px; border-radius:11px;}
+  .lbl{font-size:12px; color:var(--sub); letter-spacing:.2px; margin-bottom:6px; font-weight:500;}
+  .inp{width:100%; padding:13px 14px; border-radius:12px; background:var(--surface-2);
+       border:1px solid var(--border); font-size:16px; color:var(--ink); outline:none;}
+  .inp:focus{border-color:var(--accent); background:#fff;}
+  .pill{display:inline-flex; align-items:center; gap:5px; font-weight:600; font-size:13px;
+        padding:4px 10px; border-radius:20px; font-family:var(--mono);}
+  .pup{background:var(--up-soft); color:var(--up);} .pdn{background:var(--down-soft); color:var(--down);}
+  .row-between{display:flex; align-items:center; justify-content:space-between;}
+  .fade{animation:fade .3s ease both;}
+  @keyframes fade{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;}}
+  @keyframes slideup{from{transform:translateY(40px); opacity:.5;} to{transform:none; opacity:1;}}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .ghosttext::placeholder{color:var(--faint);}
+  .tap{cursor:pointer;}
+  ::-webkit-scrollbar{width:0;}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useCallback, useRef } = React;
+
+/* ════════════════ CONFIG — paste your Supabase creds here ════════════════ */
+const CONFIG = {
+  SUPABASE_URL: "https://matblvuwzxcntkburhwk.supabase.co",       // e.g. https://abcd.supabase.co
+  SUPABASE_ANON_KEY: "sb_publishable_9xjX27xiv_UNhRD8daqVpg_10lf41Ba",  // anon public key
+};
+
+/* ════════════════ seed (from the spreadsheet) ════════════════ */
+const uid = () => Math.random().toString(36).slice(2, 10);
+const AS_OF = new Date("2026-04-27").getTime();
+const SEED_POSITIONS = [
+  { ticker:"ETH",  shares:0.007065, avgCost:2284.40,  lastPrice:2284.87 },
+  { ticker:"SPY",  shares:0.069913, avgCost:715.17,   lastPrice:715.17 },
+  { ticker:"VZ",   shares:0.530786, avgCost:47.10,    lastPrice:47.10 },
+  { ticker:"BBY",  shares:0.421799, avgCost:59.27,    lastPrice:59.50 },
+  { ticker:"TSLA", shares:0.083754, avgCost:238.79,   lastPrice:378.67 },
+  { ticker:"AMZN", shares:0.06246,  avgCost:160.10,   lastPrice:261.12 },
+  { ticker:"TGT",  shares:0.079520, avgCost:188.63,   lastPrice:129.74 },
+  { ticker:"AAPL", shares:0.144903, avgCost:138.02,   lastPrice:267.61 },
+  { ticker:"JETS", shares:0.641508, avgCost:23.38,    lastPrice:25.53 },
+  { ticker:"BIT",  shares:0.001006, avgCost:57353.21, lastPrice:76730.87 },
+  { ticker:"SPOT", shares:0.217713, avgCost:114.83,   lastPrice:495.82 },
+  { ticker:"FB",   shares:0.104712, avgCost:191.00,   lastPrice:678.62 },
+  { ticker:"DKS",  shares:0.186637, avgCost:80.37,    lastPrice:229.34 },
+].map(p => ({ ...p, prevClose:p.lastPrice, lastPriceAt:AS_OF }));
+
+const SEED_HISTORY = [
+  { id:uid(), type:"sell", ticker:"BIT", shares:0.001190, price:48462.18, amount:57.67, ts:new Date("2025-11-01").getTime() },
+  { id:uid(), type:"sell", ticker:"DIS", shares:0.082779, price:102.32,   amount:8.47,  ts:new Date("2025-08-01").getTime() },
+  { id:uid(), type:"buy",  ticker:"BIT", shares:0.001190, price:42016.81, amount:50.00, ts:new Date("2024-06-01").getTime() },
+  { id:uid(), type:"buy",  ticker:"DIS", shares:0.082779, price:181.21,   amount:15.00, ts:new Date("2024-03-01").getTime() },
+];
+const SEED_BASIS = SEED_POSITIONS.reduce((s,p)=>s+p.shares*p.avgCost,0);
+const SEED_DOC = {
+  setupComplete:false, parentPin:"", apiKey:"",
+  cash:0, totalDeposited:+SEED_BASIS.toFixed(2), realizedPL:1.14,
+  positions:SEED_POSITIONS, transactions:SEED_HISTORY,
+  fundingRequests:[], valueHistory:[],
+};
+
+/* ════════════════ company labels ════════════════ */
+const NAMES = { ETH:"Ethereum", SPY:"S&P 500", VZ:"Verizon", BBY:"Best Buy", TSLA:"Tesla",
+  AMZN:"Amazon", TGT:"Target", AAPL:"Apple", JETS:"Airlines ETF", BIT:"Bitcoin",
+  SPOT:"Spotify", FB:"Meta", DKS:"Dick's", DIS:"Disney" };
+const nameOf = t => NAMES[t] || t;
+
+/* ════════════════ formatting ════════════════ */
+const usd = n => (n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const usd0 = n => (n<0?"-":"")+"$"+Math.abs(n).toLocaleString("en-US",{maximumFractionDigits:0});
+const pct = n => (n>=0?"+":"")+n.toFixed(2)+"%";
+const sh = n => Number(n.toFixed(6)).toString();
+
+/* ════════════════ storage (Supabase or in-memory) ════════════════ */
+let supa = null;
+try {
+  if (CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY && window.supabase) {
+    supa = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY);
+  }
+} catch(e){ console.warn("supabase init failed", e); }
+const REMOTE = !!supa;
+const ROW = "main";
+let mem = null;
+const Store = {
+  remote: REMOTE,
+  async load(){
+    if (supa){
+      try{
+        const { data } = await supa.from("portfolio").select("data").eq("id",ROW);
+        if (data && data[0] && data[0].data) return data[0].data;
+        await supa.from("portfolio").upsert({ id:ROW, data:SEED_DOC });
+        return JSON.parse(JSON.stringify(SEED_DOC));
+      }catch(e){ console.error(e); }
+    }
+    if (!mem) mem = JSON.parse(JSON.stringify(SEED_DOC));
+    return mem;
+  },
+  async save(d){
+    if (supa){ try{ await supa.from("portfolio").upsert({ id:ROW, data:d, updated_at:new Date().toISOString() }); }catch(e){ console.error(e); } }
+    else mem = d;
+  }
+};
+
+/* ════════════════ finnhub ════════════════ */
+async function quote(sym, key){
+  if (!key) throw new Error("no-key");
+  const r = await fetch(`https://finnhub.io/api/v1/quote?symbol=${encodeURIComponent(sym.toUpperCase())}&token=${key}`);
+  const j = await r.json();
+  if (j && typeof j.c==="number" && j.c>0) return { price:j.c, prevClose:typeof j.pc==="number"?j.pc:j.c };
+  throw new Error("no-quote");
+}
+async function lookup(q, key){
+  if (!key) throw new Error("no-key");
+  const r = await fetch(`https://finnhub.io/api/v1/search?q=${encodeURIComponent(q)}&token=${key}`);
+  const j = await r.json();
+  return (j.result||[]).filter(x=>x.symbol && !x.symbol.includes(".")).slice(0,8);
+}
+
+/* ════════════════ metrics ════════════════ */
+function metrics(d){
+  const holdings = (d.positions||[]).map(p=>{
+    const price=p.lastPrice||p.avgCost, value=p.shares*price, cost=p.shares*p.avgCost;
+    const pl=value-cost, plPct=cost>0?pl/cost*100:0;
+    const day=p.prevClose?(price-p.prevClose)*p.shares:0;
+    return {...p, price, value, cost, pl, plPct, day};
+  });
+  const invested=holdings.reduce((s,h)=>s+h.value,0);
+  const total=invested+d.cash;
+  const net=total-(d.totalDeposited||0), netPct=d.totalDeposited?net/d.totalDeposited*100:0;
+  const day=holdings.reduce((s,h)=>s+h.day,0);
+  return { holdings, invested, total, net, netPct, day };
+}
+
+/* ════════════════ tiny icons (inline svg) ════════════════ */
+const I = {
+  lock:    p=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>,
+  unlock:  p=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 017.5-2"/></svg>,
+  gear:    p=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.6 1.6 0 00-2.7 1.1V21a2 2 0 11-4 0v-.1A1.6 1.6 0 005 19.4l-.1.1a2 2 0 11-2.8-2.8l.1-.1A1.6 1.6 0 003.3 14H3a2 2 0 110-4h.1A1.6 1.6 0 004.6 7.4l-.1-.1a2 2 0 112.8-2.8l.1.1A1.6 1.6 0 0010 4.6V4a2 2 0 114 0v.1a1.6 1.6 0 002.7 1.1l.1-.1a2 2 0 112.8 2.8l-.1.1a1.6 1.6 0 001.1 2.7H21a2 2 0 110 4h-.1a1.6 1.6 0 00-1.5 1z"/></svg>,
+  search:  p=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>,
+  pie:     p=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><path d="M21 12A9 9 0 113 12M12 3a9 9 0 019 9h-9z"/></svg>,
+  clock:   p=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>,
+  refresh: p=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><path d="M21 12a9 9 0 11-3-6.7L21 8M21 3v5h-5"/></svg>,
+  x:       p=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>,
+  back:    p=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><path d="M15 18l-6-6 6-6"/></svg>,
+  up:      p=><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2.4" strokeLinecap="round"><path d="M5 15l7-7 7 7"/></svg>,
+  down:    p=><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2.4" strokeLinecap="round"><path d="M5 9l7 7 7-7"/></svg>,
+  check:   p=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2.4" strokeLinecap="round"><path d="M5 12l5 5L20 6"/></svg>,
+  plus:    p=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2.2" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>,
+  trash:   p=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={p.c||"currentColor"} strokeWidth="2" strokeLinecap="round"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13a1 1 0 001 1h8a1 1 0 001-1l1-13"/></svg>,
+};
+
+/* ════════════════ charts ════════════════ */
+const PALETTE = ["#2B59C3","#3E8E7E","#7C6BD9","#4BA6C9","#C36B9A","#5B8266","#D08E45","#6E8898","#9C5BB0","#4F9D69","#B0566B","#8A93A2","#3D7EA6"];
+
+function AreaChart({ points, up }){
+  if (!points || points.length < 2) return (
+    <div style={{height:96, display:"flex", alignItems:"center", justifyContent:"center", color:"var(--faint)", fontSize:12.5}}>
+      Value history will appear as prices update over time
+    </div>
+  );
+  const W=440, H=96, pad=6;
+  const ys = points.map(p=>p.total);
+  const min=Math.min(...ys), max=Math.max(...ys), span=(max-min)||1;
+  const x = i => pad + i*(W-2*pad)/(points.length-1);
+  const y = v => H-pad - (v-min)/span*(H-2*pad);
+  const line = points.map((p,i)=>`${i?"L":"M"}${x(i).toFixed(1)} ${y(p.total).toFixed(1)}`).join(" ");
+  const area = `${line} L${x(points.length-1).toFixed(1)} ${H} L${x(0).toFixed(1)} ${H} Z`;
+  const col = up?"var(--up)":"var(--down)";
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} preserveAspectRatio="none" style={{display:"block"}}>
+      <defs><linearGradient id="ag" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stopColor={col} stopOpacity="0.18"/><stop offset="100%" stopColor={col} stopOpacity="0"/>
+      </linearGradient></defs>
+      <path d={area} fill="url(#ag)"/>
+      <path d={line} fill="none" stroke={col} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function Donut({ segments }){
+  const total = segments.reduce((s,x)=>s+x.value,0) || 1;
+  const R=52, CC=2*Math.PI*R; let off=0;
+  return (
+    <div style={{display:"flex", alignItems:"center", gap:18}}>
+      <svg width="130" height="130" viewBox="0 0 130 130">
+        <g transform="rotate(-90 65 65)">
+          {segments.map((s,i)=>{
+            const len=s.value/total*CC; const el=(
+              <circle key={i} cx="65" cy="65" r={R} fill="none" stroke={s.color} strokeWidth="16"
+                strokeDasharray={`${len.toFixed(2)} ${(CC-len).toFixed(2)}`} strokeDashoffset={(-off).toFixed(2)} strokeLinecap="butt"/>
+            ); off+=len; return el;
+          })}
+        </g>
+      </svg>
+      <div style={{flex:1, minWidth:0}}>
+        {segments.slice(0,6).map((s,i)=>(
+          <div key={i} className="row-between" style={{marginBottom:7}}>
+            <span style={{display:"flex", alignItems:"center", gap:8, fontSize:13.5, minWidth:0}}>
+              <span style={{width:9, height:9, borderRadius:3, background:s.color, flexShrink:0}}/>
+              <span style={{overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{s.label}</span>
+            </span>
+            <span className="num" style={{fontSize:12.5, color:"var(--sub)"}}>{(s.value/total*100).toFixed(0)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════ shared bits ════════════════ */
+function Toast({ msg }){ if(!msg) return null; return (
+  <div style={{position:"fixed", bottom:96, left:"50%", transform:"translateX(-50%)", background:"var(--ink)", color:"#fff",
+    fontSize:13.5, fontWeight:600, padding:"10px 18px", borderRadius:24, zIndex:80, boxShadow:"0 8px 30px rgba(0,0,0,.25)"}}>{msg}</div>
+);}
+
+function Sheet({ title, onClose, children }){
+  return (
+    <div onClick={onClose} style={{position:"fixed", inset:0, background:"rgba(20,24,30,.45)", zIndex:60, display:"flex", alignItems:"flex-end", justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} style={{width:"100%", maxWidth:480, background:"var(--surface)", borderTopLeftRadius:24, borderTopRightRadius:24,
+        padding:"20px 18px calc(20px + env(safe-area-inset-bottom))", maxHeight:"92vh", overflowY:"auto", animation:"slideup .22s ease"}}>
+        <div className="row-between" style={{marginBottom:16}}>
+          <div style={{fontFamily:"Fraunces, serif", fontSize:21, fontWeight:600}}>{title}</div>
+          <button onClick={onClose} className="btn-soft" style={{border:"none", borderRadius:10, padding:8, background:"var(--surface-2)"}}><I.x c="var(--sub)"/></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════ APP ════════════════ */
+function App(){
+  const [doc, setDoc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState("portfolio");   // portfolio | history
+  const [parent, setParent] = useState(false);
+  const [sheet, setSheet] = useState(null);
+  const [detail, setDetail] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [toast, setToast] = useState(null);
+  const flash = m => { setToast(m); setTimeout(()=>setToast(null), 2000); };
+
+  const commit = useCallback(next => { setDoc(next); Store.save(next); }, []);
+
+  const pull = useCallback(async (silent)=>{ const d = await Store.load(); setDoc(d); if(!silent) flash("Synced"); }, []);
+  useEffect(()=>{ (async()=>{ setDoc(await Store.load()); setLoading(false); })(); }, []);
+
+  // keep devices in sync (remote only)
+  useEffect(()=>{
+    if (!REMOTE) return;
+    const onFocus = ()=>pull(true);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) pull(true); });
+    const iv = setInterval(()=>{ if(!document.hidden) pull(true); }, 30000);
+    return ()=>{ window.removeEventListener("focus", onFocus); clearInterval(iv); };
+  }, [pull]);
+
+  const refreshPrices = useCallback(async (d=doc, silent)=>{
+    if (!d || !d.positions.length){ if(!silent) flash("No holdings"); return; }
+    if (!d.apiKey){ if(!silent) flash("Add a price key in Settings"); return; }
+    setBusy(true); let fail=0;
+    const positions = await Promise.all(d.positions.map(async p=>{
+      try{ const q=await quote(p.ticker, d.apiKey); return {...p, lastPrice:q.price, prevClose:q.prevClose, lastPriceAt:Date.now()}; }
+      catch(e){ fail++; return p; }
+    }));
+    const next={...d, positions};
+    const m=metrics(next), today=new Date().toISOString().slice(0,10);
+    const hist=(next.valueHistory||[]).filter(h=>h.day!==today);
+    hist.push({day:today, total:+m.total.toFixed(2)});
+    next.valueHistory=hist.slice(-120);
+    commit(next); setBusy(false);
+    if(!silent) flash(fail?`Updated, ${fail} couldn't fetch`:"Prices updated");
+  }, [doc, commit]);
+
+  useEffect(()=>{ if(doc && doc.setupComplete && doc.apiKey && doc.positions.length){
+    const last=Math.max(0,...doc.positions.map(p=>p.lastPriceAt||0));
+    if(Date.now()-last>120000) refreshPrices(doc, true);
+  } /* eslint-disable-next-line */ }, [loading]);
+
+  if (loading) return <Center>Loading…</Center>;
+  if (!doc || !doc.setupComplete) return <Setup onDone={commit}/>;
+
+  const m = metrics(doc);
+  const pending = (doc.fundingRequests||[]).filter(r=>r.status==="pending");
+
+  /* ── trade ── */
+  function trade({ side, ticker, shares, price }){
+    ticker=ticker.toUpperCase(); const cost=shares*price;
+    const next={...doc, positions:[...doc.positions]};
+    const i=next.positions.findIndex(p=>p.ticker===ticker);
+    if (side==="buy"){
+      if (cost>doc.cash+1e-6){ flash("Not enough cash"); return false; }
+      next.cash=+(doc.cash-cost).toFixed(2);
+      if (i>=0){ const p=next.positions[i], tot=p.shares+shares;
+        next.positions[i]={...p, shares:tot, avgCost:(p.shares*p.avgCost+cost)/tot, lastPrice:price, prevClose:p.prevClose||price, lastPriceAt:Date.now()};
+      } else next.positions.push({ticker, shares, avgCost:price, lastPrice:price, prevClose:price, lastPriceAt:Date.now()});
+    } else {
+      if (i<0 || next.positions[i].shares<shares-1e-6){ flash("Not enough shares"); return false; }
+      const p=next.positions[i];
+      next.cash=+(doc.cash+cost).toFixed(2);
+      next.realizedPL=+((doc.realizedPL||0)+(price-p.avgCost)*shares).toFixed(2);
+      const rem=p.shares-shares;
+      if (rem<1e-6) next.positions.splice(i,1); else next.positions[i]={...p, shares:rem, lastPrice:price, lastPriceAt:Date.now()};
+    }
+    next.transactions=[{id:uid(), type:side, ticker, shares, price, amount:cost, ts:Date.now()}, ...(doc.transactions||[])];
+    commit(next); flash(`${side==="buy"?"Bought":"Sold"} ${sh(shares)} ${ticker}`); return true;
+  }
+  function request(amount, note){ commit({...doc, fundingRequests:[{id:uid(), amount, note, status:"pending", ts:Date.now()}, ...(doc.fundingRequests||[])]}); flash("Sent for approval"); }
+  function resolve(id, ok){
+    const next={...doc, fundingRequests:doc.fundingRequests.map(r=>r.id===id?{...r, status:ok?"approved":"denied"}:r)};
+    if (ok){ const r=doc.fundingRequests.find(x=>x.id===id);
+      next.cash=+(doc.cash+r.amount).toFixed(2); next.totalDeposited=+((doc.totalDeposited||0)+r.amount).toFixed(2);
+      next.transactions=[{id:uid(), type:"deposit", amount:r.amount, ts:Date.now(), note:r.note}, ...(doc.transactions||[])];
+    }
+    commit(next); flash(ok?"Approved":"Denied");
+  }
+  function deposit(amount){ commit({...doc, cash:+(doc.cash+amount).toFixed(2), totalDeposited:+((doc.totalDeposited||0)+amount).toFixed(2),
+    transactions:[{id:uid(), type:"deposit", amount, ts:Date.now(), note:"Added by parent"}, ...(doc.transactions||[])]}); flash("Funds added"); }
+
+  const openTrade = (side, ticker, price) => setSheet({t:"trade", side, ticker, price});
+
+  return (
+    <div>
+      {/* header */}
+      <div style={{padding:"calc(14px + env(safe-area-inset-top)) 16px 8px", display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontFamily:"Fraunces, serif", fontSize:24, fontWeight:600, lineHeight:1}}>{nameTitle(tab)}</div>
+          <div style={{fontSize:11.5, color:"var(--sub)", marginTop:3}}>Practice account · {REMOTE?"synced":"local preview"} · real prices</div>
+        </div>
+        <div style={{display:"flex", gap:8}}>
+          <IconBtn onClick={()=>setSheet({t:"settings"})}><I.gear c="var(--sub)"/></IconBtn>
+          <IconBtn active={parent} badge={pending.length} onClick={()=> parent ? (setParent(false),flash("Locked")) : setSheet({t:"pin", then:()=>{setParent(true); flash("Parent mode on");}})}>
+            {parent ? <I.unlock c="var(--accent)"/> : <I.lock c="var(--sub)"/>}
+          </IconBtn>
+        </div>
+      </div>
+
+      <div className="scroll fade" key={tab}>
+        {tab==="portfolio" && !detail && (
+          <Portfolio doc={doc} m={m} busy={busy}
+            onRefresh={()=>refreshPrices()} onSearchBuy={openTrade}
+            onTrade={openTrade} onRequest={()=>setSheet({t:"request"})}
+            onHolding={t=>setDetail(t)} />
+        )}
+        {tab==="portfolio" && detail && (
+          <Detail m={m} ticker={detail} onBack={()=>setDetail(null)} onTrade={openTrade}/>
+        )}
+        {tab==="history" && (
+          <History doc={doc} m={m} parent={parent} onResolve={resolve}
+            onUnlock={()=>setSheet({t:"pin", then:()=>setParent(true)})}/>
+        )}
+      </div>
+
+      {/* bottom nav */}
+      <div style={{position:"fixed", bottom:0, left:0, right:0, display:"flex", justifyContent:"center", pointerEvents:"none"}}>
+        <div style={{width:"100%", maxWidth:480, background:"rgba(255,255,255,.92)", backdropFilter:"blur(12px)", borderTop:"1px solid var(--border)",
+          display:"flex", padding:"8px 8px calc(8px + env(safe-area-inset-bottom))", pointerEvents:"auto"}}>
+          <Tab active={tab==="portfolio"} onClick={()=>{setTab("portfolio"); setDetail(null);}} icon={<I.pie/>} label="Portfolio"/>
+          <Tab active={tab==="history"} onClick={()=>setTab("history")} icon={<I.clock/>} label="History" badge={pending.length}/>
+        </div>
+      </div>
+
+      {sheet?.t==="pin" && <PinSheet doc={doc} onClose={()=>setSheet(null)} onOk={()=>{sheet.then&&sheet.then(); setSheet(null);}}/>}
+      {sheet?.t==="trade" && <TradeSheet doc={doc} init={sheet} onClose={()=>setSheet(null)} onExec={trade} flash={flash}/>}
+      {sheet?.t==="request" && <RequestSheet onClose={()=>setSheet(null)} onSubmit={(a,n)=>{request(a,n); setSheet(null);}}/>}
+      {sheet?.t==="settings" && <Settings doc={doc} parent={parent} commit={commit} flash={flash}
+        onClose={()=>setSheet(null)} onUnlock={()=>setSheet({t:"pin", then:()=>setParent(true)})}
+        onDeposit={()=>setSheet({t:"deposit"})}/>}
+      {sheet?.t==="deposit" && <DepositSheet onClose={()=>setSheet(null)} onSubmit={a=>{deposit(a); setSheet(null);}}/>}
+
+      <Toast msg={toast}/>
+    </div>
+  );
+}
+function nameTitle(t){ return t==="portfolio"?"Portfolio":"History"; }
+
+/* ── small chrome ── */
+function Center({ children }){ return <div style={{height:"80vh", display:"grid", placeItems:"center", color:"var(--sub)"}}>{children}</div>; }
+function IconBtn({ children, onClick, active, badge }){ return (
+  <button onClick={onClick} style={{position:"relative", background:active?"var(--accent-soft)":"var(--surface)", border:`1px solid ${active?"var(--accent)":"var(--border)"}`,
+    borderRadius:12, padding:10, boxShadow:"var(--shadow)"}}>
+    {children}
+    {badge>0 && <span style={{position:"absolute", top:-5, right:-5, background:"var(--accent)", color:"#fff", fontSize:10.5, fontWeight:700, minWidth:17, height:17, borderRadius:9, display:"grid", placeItems:"center", padding:"0 4px"}}>{badge}</span>}
+  </button>
+);}
+function Tab({ active, onClick, icon, label, badge }){ return (
+  <button onClick={onClick} style={{flex:1, position:"relative", background:"none", border:"none", display:"flex", flexDirection:"column", alignItems:"center", gap:3, padding:"6px 0",
+    color:active?"var(--accent)":"var(--faint)", fontWeight:600, fontSize:11.5}}>
+    {icon}<span>{label}</span>
+    {badge>0 && <span style={{position:"absolute", top:2, right:"calc(50% - 24px)", background:"var(--accent)", color:"#fff", fontSize:9.5, fontWeight:700, minWidth:15, height:15, borderRadius:8, display:"grid", placeItems:"center", padding:"0 3px"}}>{badge}</span>}
+  </button>
+);}
+function Field({ label, children }){ return <label style={{display:"block", marginBottom:14}}><div className="lbl">{label}</div>{children}</label>; }
+
+/* ════════════════ Portfolio page ════════════════ */
+function Portfolio({ doc, m, busy, onRefresh, onSearchBuy, onTrade, onRequest, onHolding }){
+  const up = m.net>=0;
+  const segs = [...m.holdings].sort((a,b)=>b.value-a.value).map((h,i)=>({label:nameOf(h.ticker), value:h.value, color:PALETTE[i%PALETTE.length]}));
+  if (doc.cash>0) segs.push({label:"Cash", value:doc.cash, color:"#C7CDD6"});
+  return (
+    <>
+      <SearchBar apiKey={doc.apiKey} onBuy={onSearchBuy}/>
+
+      {/* hero */}
+      <div className="card" style={{padding:"18px 18px 8px", marginBottom:14}}>
+        <div className="lbl">Total value</div>
+        <div style={{fontFamily:"Fraunces, serif", fontSize:38, fontWeight:600, letterSpacing:"-.5px", margin:"2px 0 8px"}}>{usd(m.total)}</div>
+        <div style={{display:"flex", gap:10, alignItems:"center", marginBottom:6}}>
+          <span className={up?"pill pup":"pill pdn"}>{up?<I.up/>:<I.down/>}{usd(m.net)} ({pct(m.netPct)})</span>
+          <span style={{fontSize:12, color:"var(--sub)"}}>all-time</span>
+        </div>
+        <AreaChart points={doc.valueHistory} up={up}/>
+      </div>
+
+      {/* cash + today */}
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14}}>
+        <div className="card" style={{padding:"13px 15px"}}>
+          <div className="lbl">Cash balance</div>
+          <div className="num" style={{fontSize:18, fontWeight:600}}>{usd(doc.cash)}</div>
+        </div>
+        <div className="card" style={{padding:"13px 15px"}}>
+          <div className="lbl">Today</div>
+          <div className="num" style={{fontSize:18, fontWeight:600, color:m.day>=0?"var(--up)":"var(--down)"}}>{m.day>=0?"+":""}{usd(m.day)}</div>
+        </div>
+      </div>
+
+      <button className="btn btn-ghost" style={{width:"100%", display:"flex", alignItems:"center", justifyContent:"center", gap:8, marginBottom:18}} onClick={onRequest}>
+        <I.plus c="var(--accent)"/> Request funds from parent
+      </button>
+
+      {/* allocation */}
+      {m.holdings.length>0 && (
+        <div className="card" style={{padding:"16px 18px", marginBottom:18}}>
+          <div className="lbl" style={{marginBottom:12}}>Allocation</div>
+          <Donut segments={segs}/>
+        </div>
+      )}
+
+      {/* holdings */}
+      <div className="row-between" style={{marginBottom:10}}>
+        <div style={{fontFamily:"Fraunces, serif", fontSize:19, fontWeight:600}}>Holdings</div>
+        <button onClick={onRefresh} disabled={busy} style={{background:"none", border:"none", color:"var(--sub)", fontSize:13, display:"flex", alignItems:"center", gap:6, fontWeight:600}}>
+          <span style={{display:"inline-flex", animation:busy?"spin 1s linear infinite":"none"}}><I.refresh/></span> Refresh prices
+        </button>
+      </div>
+
+      {m.holdings.length===0 && <div className="card" style={{padding:22, textAlign:"center", color:"var(--sub)", fontSize:14}}>No holdings yet. Search above to buy your first stock.</div>}
+
+      {[...m.holdings].sort((a,b)=>b.value-a.value).map(h=>(
+        <div key={h.ticker} className="card" style={{padding:"14px 15px", marginBottom:11}}>
+          <div className="row-between tap" onClick={()=>onHolding(h.ticker)}>
+            <div style={{minWidth:0}}>
+              <div style={{display:"flex", alignItems:"baseline", gap:8}}>
+                <span style={{fontWeight:700, fontSize:16}}>{h.ticker}</span>
+                <span style={{fontSize:12.5, color:"var(--sub)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{nameOf(h.ticker)}</span>
+              </div>
+              <div className="num" style={{fontSize:12, color:"var(--sub)", marginTop:3}}>{sh(h.shares)} sh · {usd(h.price)}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <div className="num" style={{fontSize:16, fontWeight:600}}>{usd(h.value)}</div>
+              <div className="num" style={{fontSize:12.5, color:h.pl>=0?"var(--up)":"var(--down)", marginTop:2}}>{h.pl>=0?"+":""}{usd(h.pl)} ({pct(h.plPct)})</div>
+            </div>
+          </div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:9, marginTop:12}}>
+            <button className="btn btn-sm btn-up" onClick={()=>onTrade("buy", h.ticker, h.price)}>Buy</button>
+            <button className="btn btn-sm btn-soft" onClick={()=>onTrade("sell", h.ticker, h.price)} style={{color:"var(--down)"}}>Sell</button>
+          </div>
+        </div>
+      ))}
+
+      <div style={{textAlign:"center", marginTop:16, fontSize:11, color:"var(--faint)"}}>
+        Invested {usd(doc.totalDeposited||0)} · realized {usd(doc.realizedPL||0)}
+      </div>
+    </>
+  );
+}
+
+/* ════════════════ Search bar ════════════════ */
+function SearchBar({ apiKey, onBuy }){
+  const [q,setQ]=useState(""); const [res,setRes]=useState(null); const [loading,setLoading]=useState(false);
+  const [pick,setPick]=useState(null); const tmr=useRef();
+  useEffect(()=>{
+    clearTimeout(tmr.current); setPick(null);
+    if (!q.trim()){ setRes(null); return; }
+    tmr.current=setTimeout(async()=>{
+      if (!apiKey){ setRes("nokey"); return; }
+      setLoading(true);
+      try{ setRes(await lookup(q, apiKey)); }catch(e){ setRes([]); }
+      setLoading(false);
+    }, 350);
+    return ()=>clearTimeout(tmr.current);
+  }, [q, apiKey]);
+
+  const choose = async (sym)=>{
+    setPick({sym, loading:true});
+    try{ const qt=await quote(sym, apiKey); setPick({sym, price:qt.price}); }
+    catch(e){ setPick({sym, err:true}); }
+    setRes(null); setQ(sym);
+  };
+
+  return (
+    <div style={{marginBottom:14}}>
+      <div className="card" style={{display:"flex", alignItems:"center", gap:10, padding:"11px 14px"}}>
+        <I.search c="var(--faint)"/>
+        <input className="inp ghosttext" style={{border:"none", background:"none", padding:0, flex:1}} placeholder="Search ticker or company…" value={q} onChange={e=>setQ(e.target.value)}/>
+        {q && <button onClick={()=>{setQ(""); setRes(null); setPick(null);}} style={{background:"none", border:"none", padding:0}}><I.x c="var(--faint)"/></button>}
+      </div>
+
+      {loading && <div style={{padding:"10px 4px", fontSize:13, color:"var(--sub)"}}>Searching…</div>}
+      {res==="nokey" && <div style={{padding:"10px 4px", fontSize:12.5, color:"var(--sub)"}}>Add a free price key in Settings to search & pull live prices.</div>}
+      {Array.isArray(res) && res.length===0 && !loading && <div style={{padding:"10px 4px", fontSize:13, color:"var(--sub)"}}>No matches.</div>}
+      {Array.isArray(res) && res.length>0 && (
+        <div className="card" style={{marginTop:8, overflow:"hidden"}}>
+          {res.map((r,i)=>(
+            <div key={r.symbol+i} className="tap row-between" onClick={()=>choose(r.symbol)}
+              style={{padding:"11px 14px", borderTop:i?"1px solid var(--border)":"none"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontWeight:700, fontSize:14.5}}>{r.symbol}</div>
+                <div style={{fontSize:12, color:"var(--sub)", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{r.description}</div>
+              </div>
+              <I.search c="var(--faint)"/>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {pick && (
+        <div className="card fade" style={{marginTop:8, padding:"14px 16px", display:"flex", alignItems:"center", justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontWeight:700, fontSize:16}}>{pick.sym}</div>
+            <div className="num" style={{fontSize:13, color:"var(--sub)", marginTop:2}}>
+              {pick.loading ? "Fetching price…" : pick.err ? "Price unavailable" : `Current: ${usd(pick.price)}`}
+            </div>
+          </div>
+          {!pick.loading && !pick.err && (
+            <button className="btn btn-up" onClick={()=>onBuy("buy", pick.sym, pick.price)} style={{padding:"10px 22px"}}>Buy</button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════ Holding detail ════════════════ */
+function Detail({ m, ticker, onBack, onTrade }){
+  const h=m.holdings.find(x=>x.ticker===ticker);
+  if (!h) return <><DetailHead t={ticker} onBack={onBack}/><div className="card" style={{padding:22, textAlign:"center", color:"var(--sub)"}}>Position closed.</div></>;
+  const rows=[["Shares", sh(h.shares)],["Current price", usd(h.price)],["Average cost", usd(h.avgCost)],
+    ["Market value", usd(h.value)],["Total cost", usd(h.cost)],
+    ["Gain / loss", `${h.pl>=0?"+":""}${usd(h.pl)} (${pct(h.plPct)})`]];
+  return (
+    <>
+      <DetailHead t={ticker} sub={nameOf(ticker)} onBack={onBack}/>
+      <div className="card" style={{padding:18, marginBottom:14}}>
+        <div style={{fontFamily:"Fraunces, serif", fontSize:32, fontWeight:600}}>{usd(h.value)}</div>
+        <div className="num" style={{fontSize:13.5, color:h.pl>=0?"var(--up)":"var(--down)", marginTop:3}}>{h.pl>=0?"+":""}{usd(h.pl)} ({pct(h.plPct)})</div>
+      </div>
+      <div className="card" style={{overflow:"hidden", marginBottom:16}}>
+        {rows.map(([k,v],i)=>(
+          <div key={k} className="row-between" style={{padding:"13px 16px", borderTop:i?"1px solid var(--border)":"none"}}>
+            <span style={{fontSize:14, color:"var(--sub)"}}>{k}</span><span className="num" style={{fontSize:14}}>{v}</span>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:11}}>
+        <button className="btn btn-up" onClick={()=>onTrade("buy", ticker, h.price)}>Buy more</button>
+        <button className="btn btn-ghost" style={{color:"var(--down)"}} onClick={()=>onTrade("sell", ticker, h.price)}>Sell</button>
+      </div>
+    </>
+  );
+}
+function DetailHead({ t, sub, onBack }){ return (
+  <div style={{display:"flex", alignItems:"center", gap:12, marginBottom:16}}>
+    <button onClick={onBack} className="btn-soft" style={{border:"none", borderRadius:11, padding:9, background:"var(--surface-2)"}}><I.back/></button>
+    <div><div style={{fontFamily:"Fraunces, serif", fontSize:22, fontWeight:600, lineHeight:1}}>{t}</div>
+      {sub && <div style={{fontSize:12.5, color:"var(--sub)", marginTop:2}}>{sub}</div>}</div>
+  </div>
+);}
+
+/* ════════════════ History page ════════════════ */
+function History({ doc, m, parent, onResolve, onUnlock }){
+  const tx=doc.transactions||[];
+  const reqs=(doc.fundingRequests||[]);
+  const pending=reqs.filter(r=>r.status==="pending");
+  return (
+    <>
+      {/* funding requests */}
+      {(pending.length>0 || reqs.length>0) && (
+        <div style={{marginBottom:20}}>
+          <div className="lbl" style={{marginBottom:10}}>FUNDING REQUESTS</div>
+          {pending.length>0 && !parent && (
+            <div className="card" style={{padding:13, marginBottom:11, display:"flex", alignItems:"center", gap:10, background:"var(--accent-soft)", borderColor:"var(--accent)"}}>
+              <span style={{flex:1, fontSize:13, color:"var(--ink)"}}>Parent approval needed.</span>
+              <button className="btn btn-pri btn-sm" style={{padding:"8px 14px"}} onClick={onUnlock}>Unlock</button>
+            </div>
+          )}
+          {reqs.length===0 && <div className="card" style={{padding:18, textAlign:"center", color:"var(--sub)", fontSize:13.5}}>None yet.</div>}
+          {reqs.map(r=>(
+            <div key={r.id} className="card" style={{padding:14, marginBottom:10}}>
+              <div className="row-between">
+                <span className="num" style={{fontSize:19, fontWeight:600}}>{usd(r.amount)}</span>
+                <Status s={r.status}/>
+              </div>
+              {r.note && <div style={{fontSize:13, color:"var(--sub)", marginTop:6}}>“{r.note}”</div>}
+              <div style={{fontSize:11, color:"var(--faint)", marginTop:5}}>{new Date(r.ts).toLocaleString()}</div>
+              {r.status==="pending" && parent && (
+                <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:9, marginTop:11}}>
+                  <button className="btn btn-up btn-sm" onClick={()=>onResolve(r.id,true)}>Approve</button>
+                  <button className="btn btn-soft btn-sm" style={{color:"var(--down)"}} onClick={()=>onResolve(r.id,false)}>Deny</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* realized summary */}
+      <div className="card" style={{padding:"14px 16px", marginBottom:18, display:"flex", justifyContent:"space-between"}}>
+        <span style={{fontSize:13.5, color:"var(--sub)"}}>Realized gains (closed trades)</span>
+        <span className="num" style={{fontWeight:600, color:(doc.realizedPL||0)>=0?"var(--up)":"var(--down)"}}>{(doc.realizedPL||0)>=0?"+":""}{usd(doc.realizedPL||0)}</span>
+      </div>
+
+      <div className="lbl" style={{marginBottom:10}}>ALL TRANSACTIONS</div>
+      {tx.length===0 && <div className="card" style={{padding:20, textAlign:"center", color:"var(--sub)", fontSize:14}}>No transactions yet.</div>}
+      {tx.map(t=>{
+        const isDep=t.type==="deposit", isBuy=t.type==="buy";
+        const col=isDep?"var(--accent)":isBuy?"var(--down)":"var(--up)";
+        return (
+          <div key={t.id} className="card" style={{padding:"12px 14px", marginBottom:9, display:"flex", alignItems:"center", gap:12}}>
+            <span style={{width:38, height:38, borderRadius:11, background:"var(--surface-2)", display:"grid", placeItems:"center", color:col, flexShrink:0}}>
+              {isDep?<I.plus c={col}/>:isBuy?<I.down c={col}/>:<I.up c={col}/>}
+            </span>
+            <div style={{flex:1, minWidth:0}}>
+              <div style={{fontWeight:600, fontSize:14.5}}>{isDep?"Deposit":`${isBuy?"Bought":"Sold"} ${t.ticker}`}</div>
+              <div className="num" style={{fontSize:11.5, color:"var(--sub)", marginTop:2}}>
+                {!isDep && `${sh(t.shares)} @ ${usd(t.price)} · `}{new Date(t.ts).toLocaleDateString()}
+              </div>
+            </div>
+            <span className="num" style={{fontWeight:600, fontSize:14.5, color:isBuy?"var(--down)":"var(--up)"}}>{isBuy?"-":"+"}{usd(t.amount)}</span>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+function Status({ s }){ const map={pending:["var(--accent)","var(--accent-soft)"], approved:["var(--up)","var(--up-soft)"], denied:["var(--down)","var(--down-soft)"]}; const [c,b]=map[s];
+  return <span style={{fontSize:12, fontWeight:600, color:c, background:b, padding:"3px 10px", borderRadius:20, textTransform:"capitalize"}}>{s}</span>; }
+
+/* ════════════════ Trade sheet ════════════════ */
+function TradeSheet({ doc, init, onClose, onExec, flash }){
+  const [side,setSide]=useState(init.side||"buy");
+  const [ticker,setTicker]=useState((init.ticker||"").toUpperCase());
+  const [price,setPrice]=useState(init.price?String(init.price):"");
+  const [mode,setMode]=useState("shares");
+  const [qty,setQty]=useState("");
+  const [busy,setBusy]=useState(false);
+  const owned=doc.positions.find(p=>p.ticker===ticker.toUpperCase());
+
+  useEffect(()=>{ if(!price && owned && owned.lastPrice) setPrice(String(owned.lastPrice)); /* eslint-disable-next-line */ },[ticker]);
+
+  const getLive=async()=>{ if(!ticker.trim()){flash("Enter a ticker"); return;} if(!doc.apiKey){flash("No price key — enter manually"); return;}
+    setBusy(true); try{ const q=await quote(ticker, doc.apiKey); setPrice(q.price.toFixed(2)); flash(`${ticker.toUpperCase()} ${usd(q.price)}`); }catch(e){ flash("Couldn't fetch — enter manually"); } setBusy(false); };
+
+  const p=parseFloat(price);
+  const shares = mode==="shares" ? parseFloat(qty) : (p>0?parseFloat(qty)/p:NaN);
+  const total = shares*p;
+  const maxShares = side==="buy" ? (p>0?doc.cash/p:0) : (owned?owned.shares:0);
+  const overCash = side==="buy" && total>doc.cash+1e-6;
+  const overOwned = side==="sell" && (!owned || shares>owned.shares+1e-6);
+  const valid = ticker.trim() && p>0 && shares>0 && !overCash && !overOwned;
+  const setMax = ()=>{ if(!(p>0)) return; if(mode==="shares") setQty(String(+maxShares.toFixed(6))); else setQty(String(+(maxShares*p).toFixed(2))); };
+
+  return (
+    <Sheet title="Trade" onClose={onClose}>
+      <div style={{display:"flex", background:"var(--surface-2)", borderRadius:12, padding:4, marginBottom:16}}>
+        {["buy","sell"].map(s=>(
+          <button key={s} onClick={()=>setSide(s)} style={{flex:1, padding:10, borderRadius:9, border:"none", fontWeight:700, fontSize:15, textTransform:"capitalize",
+            background:side===s?(s==="buy"?"var(--up)":"var(--down)"):"transparent", color:side===s?"#fff":"var(--sub)"}}>{s}</button>
+        ))}
+      </div>
+
+      <Field label="Ticker"><input className="inp" placeholder="AAPL" value={ticker} onChange={e=>setTicker(e.target.value.toUpperCase())}/></Field>
+
+      <Field label="Price per share">
+        <div style={{display:"flex", gap:8}}>
+          <input className="inp" style={{flex:1}} inputMode="decimal" placeholder="0.00" value={price} onChange={e=>setPrice(e.target.value)}/>
+          <button onClick={getLive} disabled={busy} className="btn-soft" style={{border:"1px solid var(--border)", borderRadius:12, padding:"0 16px", color:"var(--accent)", fontWeight:600, fontSize:13}}>{busy?"…":"Live"}</button>
+        </div>
+      </Field>
+
+      <div style={{display:"flex", background:"var(--surface-2)", borderRadius:10, padding:3, marginBottom:12}}>
+        {[["shares","Shares"],["dollars","Dollars"]].map(([k,l])=>(
+          <button key={k} onClick={()=>setMode(k)} style={{flex:1, padding:8, borderRadius:8, border:"none", fontSize:13.5, background:mode===k?"#fff":"transparent", color:mode===k?"var(--ink)":"var(--sub)", fontWeight:600}}>{l}</button>
+        ))}
+      </div>
+
+      <div className="row-between" style={{marginBottom:6}}>
+        <div className="lbl" style={{margin:0}}>{mode==="shares"?"Number of shares":"Dollar amount"}</div>
+        <button onClick={setMax} style={{background:"none", border:"none", color:"var(--accent)", fontSize:12.5, fontWeight:600}}>
+          Max {side==="buy" ? usd0(doc.cash) : sh(maxShares)+" sh"}
+        </button>
+      </div>
+      <input className="inp" inputMode="decimal" placeholder={mode==="shares"?"10":"$500"} value={qty} onChange={e=>setQty(e.target.value)}/>
+
+      {shares>0 && p>0 && (
+        <div style={{background:"var(--surface-2)", borderRadius:12, padding:13, margin:"14px 0", fontSize:13.5}}>
+          <Ln k={mode==="shares"?"Estimated total":"Shares"} v={mode==="shares"?usd(total):sh(+shares.toFixed(6))}/>
+          <Ln k="Order total" v={usd(total)}/>
+          <Ln k="Cash after" v={usd(side==="buy"?doc.cash-total:doc.cash+total)}/>
+        </div>
+      )}
+      {overCash && <Warn>That's more than the {usd(doc.cash)} cash available.</Warn>}
+      {overOwned && <Warn>He only owns {owned?sh(owned.shares):0} shares of {ticker}.</Warn>}
+
+      <button className={`btn ${side==="buy"?"btn-up":"btn-down"}`} style={{width:"100%", marginTop:8}} disabled={!valid}
+        onClick={()=>{ if(onExec({side, ticker, shares:+shares.toFixed(6), price:+p.toFixed(4)})) onClose(); }}>
+        {side==="buy"?"Buy":"Sell"} {ticker}
+      </button>
+    </Sheet>
+  );
+}
+function Ln({ k, v }){ return <div className="row-between" style={{padding:"3px 0", color:"var(--sub)"}}><span>{k}</span><span className="num" style={{color:"var(--ink)"}}>{v}</span></div>; }
+function Warn({ children }){ return <div style={{background:"var(--down-soft)", color:"var(--down)", fontSize:13, padding:"10px 12px", borderRadius:11, marginBottom:4}}>{children}</div>; }
+
+/* ════════════════ other sheets ════════════════ */
+function PinSheet({ doc, onClose, onOk }){
+  const [v,setV]=useState("");
+  const go=()=> v===doc.parentPin ? onOk() : (setV(""), alert("Wrong PIN"));
+  return <Sheet title="Parent PIN" onClose={onClose}>
+    <input autoFocus className="inp num" style={{textAlign:"center", letterSpacing:10, fontSize:24}} type="password" inputMode="numeric"
+      value={v} onChange={e=>setV(e.target.value)} onKeyDown={e=>e.key==="Enter"&&go()} placeholder="••••"/>
+    <button className="btn btn-pri" style={{width:"100%", marginTop:14}} onClick={go}>Unlock</button>
+  </Sheet>;
+}
+function RequestSheet({ onClose, onSubmit }){
+  const [a,setA]=useState(""); const [n,setN]=useState(""); const amt=parseFloat(a);
+  return <Sheet title="Request funds" onClose={onClose}>
+    <div style={{fontSize:13.5, color:"var(--sub)", marginBottom:16, lineHeight:1.5}}>This goes to your parent to approve before any cash is added.</div>
+    <Field label="Amount"><input autoFocus className="inp" inputMode="decimal" placeholder="$100" value={a} onChange={e=>setA(e.target.value)}/></Field>
+    <Field label="Why? (optional)"><input className="inp" placeholder="Saving to buy NVDA" value={n} onChange={e=>setN(e.target.value)}/></Field>
+    <button className="btn btn-pri" style={{width:"100%"}} disabled={!(amt>0)} onClick={()=>onSubmit(+amt.toFixed(2), n.trim())}>Send request</button>
+  </Sheet>;
+}
+function DepositSheet({ onClose, onSubmit }){
+  const [a,setA]=useState(""); const amt=parseFloat(a);
+  return <Sheet title="Add cash" onClose={onClose}>
+    <Field label="Amount to add"><input autoFocus className="inp" inputMode="decimal" placeholder="$100" value={a} onChange={e=>setA(e.target.value)}/></Field>
+    <button className="btn btn-pri" style={{width:"100%"}} disabled={!(amt>0)} onClick={()=>onSubmit(+amt.toFixed(2))}>Add to account</button>
+  </Sheet>;
+}
+
+/* ════════════════ Settings ════════════════ */
+function Settings({ doc, parent, commit, flash, onClose, onUnlock, onDeposit }){
+  const [key,setKey]=useState(doc.apiKey||"");
+  if (!parent) return <Sheet title="Settings" onClose={onClose}>
+    <div style={{textAlign:"center", padding:"20px 0"}}>
+      <div style={{display:"inline-flex", padding:14, background:"var(--surface-2)", borderRadius:16, marginBottom:12}}><I.lock c="var(--sub)"/></div>
+      <div style={{fontSize:14, color:"var(--sub)", marginBottom:16}}>Parent mode required to change settings.</div>
+      <button className="btn btn-pri" style={{width:"100%"}} onClick={()=>{onClose(); onUnlock();}}>Unlock parent mode</button>
+    </div>
+  </Sheet>;
+
+  return <Sheet title="Settings" onClose={onClose}>
+    <Sec title="Add funds directly">
+      <button className="btn btn-pri" style={{width:"100%", display:"flex", justifyContent:"center", gap:8}} onClick={()=>{onClose(); onDeposit();}}><I.plus c="#fff"/> Add cash</button>
+    </Sec>
+    <Sec title="Live prices (Finnhub)">
+      <div style={{fontSize:12.5, color:"var(--sub)", marginBottom:10, lineHeight:1.5}}>Free key at finnhub.io. Powers search and price refresh.</div>
+      <input className="inp" placeholder="Finnhub API key" value={key} onChange={e=>setKey(e.target.value)}/>
+      <button className="btn btn-pri" style={{width:"100%", marginTop:10}} onClick={()=>{commit({...doc, apiKey:key.trim()}); flash("Key saved");}}>Save key</button>
+    </Sec>
+    <Sec title="Positions"><PosEditor doc={doc} commit={commit} flash={flash}/></Sec>
+    <Sec title="Security">
+      <button className="btn btn-ghost" style={{width:"100%"}} onClick={()=>{
+        const cur=prompt("Current PIN?"); if(cur!==doc.parentPin){flash("Wrong PIN"); return;}
+        const np=prompt("New 4–8 digit PIN?"); if(np&&/^\d{4,8}$/.test(np)){commit({...doc, parentPin:np}); flash("PIN changed");} else flash("Must be 4–8 digits");
+      }}>Change parent PIN</button>
+    </Sec>
+    <div style={{fontSize:11.5, color:"var(--faint)", textAlign:"center", marginTop:8}}>
+      {Store.remote ? "Synced via Supabase across devices." : "Local preview — add Supabase keys in the file to sync remotely."}
+    </div>
+  </Sheet>;
+}
+function Sec({ title, children }){ return <div style={{marginBottom:22}}><div className="lbl" style={{textTransform:"uppercase", letterSpacing:.5, marginBottom:10}}>{title}</div>{children}</div>; }
+function PosEditor({ doc, commit, flash }){
+  const [t,setT]=useState(""); const [s,setS]=useState(""); const [c,setC]=useState("");
+  const add=()=>{ const tk=t.trim().toUpperCase(), shr=parseFloat(s), co=parseFloat(c);
+    if(!tk||!(shr>0)||!(co>0)){flash("Fill all three"); return;}
+    const positions=[...doc.positions]; const i=positions.findIndex(p=>p.ticker===tk);
+    if(i>=0){const p=positions[i], tot=p.shares+shr; positions[i]={...p, shares:tot, avgCost:(p.shares*p.avgCost+shr*co)/tot};}
+    else positions.push({ticker:tk, shares:shr, avgCost:co, lastPrice:co, prevClose:co, lastPriceAt:0});
+    commit({...doc, positions}); setT(""); setS(""); setC(""); flash(`Added ${tk}`);
+  };
+  return <>
+    {doc.positions.map(p=>(
+      <div key={p.ticker} className="row-between" style={{background:"var(--surface-2)", borderRadius:11, padding:"10px 13px", marginBottom:8}}>
+        <span className="num" style={{fontSize:13}}>{p.ticker} · {sh(p.shares)} @ {usd(p.avgCost)}</span>
+        <button onClick={()=>commit({...doc, positions:doc.positions.filter(x=>x.ticker!==p.ticker)})} style={{background:"none", border:"none"}}><I.trash c="var(--down)"/></button>
+      </div>
+    ))}
+    <div style={{display:"grid", gridTemplateColumns:"1.1fr 1fr 1fr", gap:8, marginTop:6}}>
+      <input className="inp" placeholder="TICK" value={t} onChange={e=>setT(e.target.value.toUpperCase())}/>
+      <input className="inp" placeholder="Shares" inputMode="decimal" value={s} onChange={e=>setS(e.target.value)}/>
+      <input className="inp" placeholder="Avg $" inputMode="decimal" value={c} onChange={e=>setC(e.target.value)}/>
+    </div>
+    <button className="btn btn-soft" style={{width:"100%", marginTop:10}} onClick={add}>Add / update position</button>
+  </>;
+}
+
+/* ════════════════ Setup wizard ════════════════ */
+function Setup({ onDone }){
+  const [step,setStep]=useState(0);
+  const [pin,setPin]=useState(""); const [cash,setCash]=useState("0"); const [apiKey,setApiKey]=useState("");
+  const [positions,setPositions]=useState(SEED_DOC.positions);
+  const [t,setT]=useState(""); const [s,setS]=useState(""); const [c,setC]=useState("");
+  const addPos=()=>{ const tk=t.trim().toUpperCase(), shr=parseFloat(s), co=parseFloat(c); if(!tk||!(shr>0)||!(co>0)) return;
+    setPositions(ps=>[...ps,{ticker:tk, shares:shr, avgCost:co, lastPrice:co, prevClose:co, lastPriceAt:0}]); setT(""); setS(""); setC(""); };
+  const finish=()=>{ const basis=positions.reduce((a,p)=>a+p.shares*p.avgCost,0);
+    onDone({ ...SEED_DOC, setupComplete:true, parentPin:pin, apiKey:apiKey.trim(),
+      cash:parseFloat(cash)||0, totalDeposited:+(basis+(parseFloat(cash)||0)).toFixed(2), positions }); };
+
+  return (
+    <div style={{padding:"calc(40px + env(safe-area-inset-top)) 22px 40px"}}>
+      <div style={{fontFamily:"Fraunces, serif", fontSize:28, fontWeight:600}}>Set up the account</div>
+      <div style={{fontSize:14, color:"var(--sub)", marginTop:4, marginBottom:26}}>A practice investing account with real market prices.</div>
+
+      {step===0 && <div className="fade">
+        <Field label="Parent PIN — locks adding money & settings (4–8 digits)">
+          <input className="inp" type="password" inputMode="numeric" placeholder="••••" value={pin} onChange={e=>setPin(e.target.value)}/></Field>
+        <Field label="Starting cash"><input className="inp" inputMode="decimal" placeholder="$0" value={cash} onChange={e=>setCash(e.target.value)}/></Field>
+        <button className="btn btn-pri" style={{width:"100%"}} onClick={()=> /^\d{4,8}$/.test(pin)&&parseFloat(cash)>=0 ? setStep(1) : alert("Enter a 4–8 digit PIN and starting cash")}>Next</button>
+      </div>}
+
+      {step===1 && <div className="fade">
+        <div style={{fontSize:13.5, color:"var(--sub)", marginBottom:14, lineHeight:1.5}}>His holdings are pre-loaded from the spreadsheet. Edit, remove, or add more — then continue.</div>
+        {positions.map((p,i)=>(
+          <div key={i} className="row-between" style={{background:"var(--surface-2)", borderRadius:11, padding:"10px 13px", marginBottom:8}}>
+            <span className="num" style={{fontSize:13}}>{p.ticker} · {sh(p.shares)} @ {usd(p.avgCost)}</span>
+            <button onClick={()=>setPositions(ps=>ps.filter((_,j)=>j!==i))} style={{background:"none", border:"none"}}><I.trash c="var(--down)"/></button>
+          </div>
+        ))}
+        <div style={{display:"grid", gridTemplateColumns:"1.1fr 1fr 1fr", gap:8, marginTop:6}}>
+          <input className="inp" placeholder="TICK" value={t} onChange={e=>setT(e.target.value.toUpperCase())}/>
+          <input className="inp" placeholder="Shares" inputMode="decimal" value={s} onChange={e=>setS(e.target.value)}/>
+          <input className="inp" placeholder="Avg $" inputMode="decimal" value={c} onChange={e=>setC(e.target.value)}/>
+        </div>
+        <button className="btn btn-soft" style={{width:"100%", marginTop:10}} onClick={addPos}>Add position</button>
+        <button className="btn btn-pri" style={{width:"100%", marginTop:16}} onClick={()=>setStep(2)}>Next</button>
+      </div>}
+
+      {step===2 && <div className="fade">
+        <Field label="Finnhub API key (free) — enables search & live prices">
+          <input className="inp" placeholder="Paste key, or leave blank for now" value={apiKey} onChange={e=>setApiKey(e.target.value)}/></Field>
+        <div style={{fontSize:12.5, color:"var(--sub)", marginBottom:18, lineHeight:1.5}}>Free in ~1 min at finnhub.io. Can be added later in Settings.</div>
+        <button className="btn btn-pri" style={{width:"100%"}} onClick={finish}>Create account</button>
+      </div>}
+
+      <div style={{display:"flex", gap:6, justifyContent:"center", marginTop:24}}>
+        {[0,1,2].map(i=><div key={i} style={{width:7, height:7, borderRadius:4, background:i===step?"var(--accent)":"var(--border)"}}/>)}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
