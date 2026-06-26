@@ -1,0 +1,254 @@
+{
+  "cash": 101,
+  "apiKey": "d8d10cpr01qt0j1ivfkgd8d10cpr01qt0j1ivfl0",
+  "parentPin": "1976",
+  "positions": [
+    {
+      "shares": 0.011508000000000001,
+      "ticker": "ETH",
+      "avgCost": 2184.4672471324293,
+      "lastPrice": 1594.38,
+      "prevClose": 1560.19,
+      "lastPriceAt": 1780803886801
+    },
+    {
+      "shares": 0.205497,
+      "ticker": "SPY",
+      "avgCost": 729.9360059270938,
+      "lastPrice": 737.55,
+      "prevClose": 757.09,
+      "lastPriceAt": 1780803886817
+    },
+    {
+      "shares": 0.530786,
+      "ticker": "VZ",
+      "avgCost": 47.1,
+      "lastPrice": 45.37,
+      "prevClose": 44.87,
+      "lastPriceAt": 1780803886790
+    },
+    {
+      "shares": 0.421799,
+      "ticker": "BBY",
+      "avgCost": 59.27,
+      "lastPrice": 71.54,
+      "prevClose": 70.99,
+      "lastPriceAt": 1780803886800
+    },
+    {
+      "shares": 0.083754,
+      "ticker": "TSLA",
+      "avgCost": 238.79,
+      "lastPrice": 391,
+      "prevClose": 418.45,
+      "lastPriceAt": 1780803886802
+    },
+    {
+      "shares": 0.06246,
+      "ticker": "AMZN",
+      "avgCost": 160.1,
+      "lastPrice": 246.03,
+      "prevClose": 253.79,
+      "lastPriceAt": 1780803886794
+    },
+    {
+      "shares": 0.0008359999999999895,
+      "ticker": "TGT",
+      "avgCost": 188.63,
+      "lastPrice": 122.57,
+      "prevClose": 123.85,
+      "lastPriceAt": 1780803886823
+    },
+    {
+      "shares": 0.144903,
+      "ticker": "AAPL",
+      "avgCost": 138.02,
+      "lastPrice": 307.34,
+      "prevClose": 311.23,
+      "lastPriceAt": 1780803886791
+    },
+    {
+      "shares": 0.641508,
+      "ticker": "JETS",
+      "avgCost": 23.38,
+      "lastPrice": 27.94,
+      "prevClose": 28,
+      "lastPriceAt": 1780803886791
+    },
+    {
+      "shares": 0.001006,
+      "ticker": "BIT",
+      "avgCost": 57353.21,
+      "lastPrice": 61654.73,
+      "prevClose": 60640.34,
+      "lastPriceAt": 1780803886806
+    },
+    {
+      "shares": 0.217713,
+      "ticker": "SPOT",
+      "avgCost": 114.83,
+      "lastPrice": 496.95,
+      "prevClose": 493.58,
+      "lastPriceAt": 1780803886823
+    },
+    {
+      "shares": 0.186637,
+      "ticker": "DKS",
+      "avgCost": 80.37,
+      "lastPrice": 214.83,
+      "prevClose": 217.6,
+      "lastPriceAt": 1780803886801
+    },
+    {
+      "shares": 0.104712,
+      "ticker": "META",
+      "avgCost": 191,
+      "lastPrice": 593,
+      "prevClose": 627.57,
+      "lastPriceAt": 1780803886790
+    }
+  ],
+  "realizedPL": -3.7,
+  "transactions": [
+    {
+      "id": "3d4hd2rc",
+      "ts": 1780803913265,
+      "note": "Added by parent",
+      "type": "deposit",
+      "amount": 100
+    },
+    {
+      "id": "dp8xl399",
+      "ts": 1780708589587,
+      "type": "buy",
+      "price": 737.55,
+      "amount": 99.9999792,
+      "shares": 0.135584,
+      "ticker": "SPY"
+    },
+    {
+      "id": "t77rlfmt",
+      "ts": 1780638493002,
+      "note": "Added by parent",
+      "type": "deposit",
+      "amount": 100
+    },
+    {
+      "id": "3t7zxyeh",
+      "ts": 1780158965228,
+      "type": "sell",
+      "price": 224.18,
+      "amount": 0.98997888,
+      "shares": 0.004416,
+      "ticker": "TTWO"
+    },
+    {
+      "id": "jhbuwb7h",
+      "ts": 1780158931376,
+      "type": "buy",
+      "price": 224.18,
+      "amount": 0.98997888,
+      "shares": 0.004416,
+      "ticker": "TTWO"
+    },
+    {
+      "id": "70of779t",
+      "ts": 1780158608382,
+      "type": "buy",
+      "price": 2025.56,
+      "amount": 8.99956308,
+      "shares": 0.004443,
+      "ticker": "ETH"
+    },
+    {
+      "id": "e4jwljx1",
+      "ts": 1780158530054,
+      "type": "sell",
+      "price": 127.09,
+      "amount": 9.999949560000001,
+      "shares": 0.078684,
+      "ticker": "TGT"
+    },
+    {
+      "id": "9e1iebsg",
+      "ts": 1761955200000,
+      "type": "sell",
+      "price": 48462.18,
+      "amount": 57.67,
+      "shares": 0.00119,
+      "ticker": "BIT"
+    },
+    {
+      "id": "zt2eswwr",
+      "ts": 1754006400000,
+      "type": "sell",
+      "price": 102.32,
+      "amount": 8.47,
+      "shares": 0.082779,
+      "ticker": "DIS"
+    },
+    {
+      "id": "903unq9w",
+      "ts": 1717200000000,
+      "type": "buy",
+      "price": 42016.81,
+      "amount": 50,
+      "shares": 0.00119,
+      "ticker": "BIT"
+    },
+    {
+      "id": "mgjadw5u",
+      "ts": 1709251200000,
+      "type": "buy",
+      "price": 181.21,
+      "amount": 15,
+      "shares": 0.082779,
+      "ticker": "DIS"
+    }
+  ],
+  "valueHistory": [
+    {
+      "day": "2026-05-29",
+      "total": 543.82
+    },
+    {
+      "day": "2026-05-30",
+      "total": 544.22
+    },
+    {
+      "day": "2026-06-01",
+      "total": 543.81
+    },
+    {
+      "day": "2026-06-02",
+      "total": 526.19
+    },
+    {
+      "day": "2026-06-03",
+      "total": 521.38
+    },
+    {
+      "day": "2026-06-05",
+      "total": 607.15
+    },
+    {
+      "day": "2026-06-06",
+      "total": 607.74
+    },
+    {
+      "day": "2026-06-07",
+      "total": 608.25
+    }
+  ],
+  "setupComplete": true,
+  "totalDeposited": 513.83,
+  "fundingRequests": [
+    {
+      "id": "a7nmz0yw",
+      "ts": 1780159035291,
+      "note": "",
+      "amount": 50,
+      "status": "denied"
+    }
+  ]
+}
