@@ -35,10 +35,78 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- ─── Resilient library loader ──────────────────────────────────────────
+     Loads React, ReactDOM, Supabase, then Babel. Each library tries a
+     primary CDN and then an unpkg fallback; React/ReactDOM/Supabase all
+     finish loading BEFORE Babel so the app code has every global it needs.
+     If any library fails on both CDNs, we paint a visible "your data is
+     safe" message instead of leaving a blank white page.
+     The app source lives below in a NON-executing <script id="app-source">
+     block, so the browser never tries to run raw JSX. We transform it with
+     Babel and run it exactly once. All versions are pinned. -->
+<script>
+(function(){
+  var LIBS = [
+    { name:"React", check:function(){ return !!window.React; }, urls:[
+      "https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js",
+      "https://unpkg.com/react@18.2.0/umd/react.production.min.js"]},
+    { name:"ReactDOM", check:function(){ return !!window.ReactDOM; }, urls:[
+      "https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js",
+      "https://unpkg.com/react-dom@18.2.0/umd/react-dom.production.min.js"]},
+    { name:"Supabase", check:function(){ return !!window.supabase; }, urls:[
+      "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js",
+      "https://unpkg.com/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"]},
+    { name:"Babel", check:function(){ return !!window.Babel; }, urls:[
+      "https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js",
+      "https://unpkg.com/@babel/standalone@7.23.2/babel.min.js"]}
+  ];
+
+  function fail(what){
+    var root = document.getElementById("root");
+    if(!root) return;
+    root.innerHTML =
+      '<div style="max-width:420px;margin:0 auto;padding:48px 24px;font-family:system-ui,-apple-system,sans-serif;color:#181B21;text-align:center;">'
+      + '<div style="font-size:42px;margin-bottom:14px;">&#128225;</div>'
+      + '<div style="font-family:Fraunces,Georgia,serif;font-size:23px;font-weight:600;margin-bottom:10px;">Couldn&rsquo;t finish loading</div>'
+      + '<div style="font-size:15px;color:#6E7782;line-height:1.55;margin-bottom:22px;">A required component (' + what + ') didn&rsquo;t load from the network. '
+      + '<b style="color:#138A5E;">Your data is safe</b> &mdash; nothing was changed or deleted. This is only a temporary loading hiccup.</div>'
+      + '<button onclick="location.reload()" style="background:#2B59C3;color:#fff;border:none;border-radius:13px;padding:13px 24px;font-size:15px;font-weight:600;cursor:pointer;">Try again</button>'
+      + '</div>';
+  }
+
+  function loadOne(lib, done){
+    var i = 0;
+    (function attempt(){
+      if(i >= lib.urls.length){ done(false); return; }   // both CDNs exhausted
+      var s = document.createElement("script");
+      s.src = lib.urls[i]; s.async = false;
+      s.onload = function(){ if(lib.check()) done(true); else { i++; attempt(); } };
+      s.onerror = function(){ i++; attempt(); };
+      document.head.appendChild(s);
+    })();
+  }
+
+  function runApp(){
+    function go(){
+      try{
+        var el = document.getElementById("app-source");
+        var out = window.Babel.transform(el.textContent, { presets:["react"] }).code;
+        (0, eval)(out);   // single, controlled execution — no auto text/babel run
+      }catch(e){ console.error(e); fail("the app"); }
+    }
+    if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", go);
+    else go();
+  }
+
+  (function next(idx){
+    if(idx >= LIBS.length){ runApp(); return; }
+    loadOne(LIBS[idx], function(ok){
+      if(!ok){ fail(LIBS[idx].name); return; }
+      next(idx + 1);
+    });
+  })(0);
+})();
+</script>
 
 <style>
   :root{
@@ -88,7 +156,7 @@
 <body>
 <div id="root"></div>
 
-<script type="text/babel" data-presets="react">
+<script type="text/jsx-app" id="app-source">
 const { useState, useEffect, useCallback, useRef } = React;
 
 /* ════════════════ CONFIG — paste your Supabase creds here ════════════════ */
@@ -151,24 +219,57 @@ try {
 } catch(e){ console.warn("supabase init failed", e); }
 const REMOTE = !!supa;
 const ROW = "main";
+const LOCAL_KEY = "stocksim:lastGoodDoc";   // local mirror of the last good doc
 let mem = null;
+
+/* localStorage mirror — a safety net of the last good doc on THIS device.
+   Wrapped in try/catch so private-mode / quota errors never break the app. */
+function writeMirror(d){ try{ localStorage.setItem(LOCAL_KEY, JSON.stringify(d)); }catch(e){} }
+function readMirror(){ try{ const s=localStorage.getItem(LOCAL_KEY); return s?JSON.parse(s):null; }catch(e){ return null; } }
+
 const Store = {
   remote: REMOTE,
+  hasMirror(){ return !!readMirror(); },
+  readMirror,
   async load(){
     if (supa){
+      // A READ error must NEVER fall through to a write. supabase-js returns
+      // {data, error} (it does not throw on query errors), so we MUST inspect
+      // error. On any read failure we throw "read-failed" — the app shows a
+      // retry screen, never the setup wizard, and the real row is left alone.
+      let resp;
       try{
-        const { data } = await supa.from("portfolio").select("data").eq("id",ROW);
-        if (data && data[0] && data[0].data) return data[0].data;
-        await supa.from("portfolio").upsert({ id:ROW, data:SEED_DOC });
-        return JSON.parse(JSON.stringify(SEED_DOC));
-      }catch(e){ console.error(e); }
+        resp = await supa.from("portfolio").select("data").eq("id", ROW);
+      }catch(e){ console.error("portfolio read failed (network)", e); throw new Error("read-failed"); }
+      if (resp.error){ console.error("portfolio read failed", resp.error); throw new Error("read-failed"); }
+
+      const rows = resp.data || [];
+      if (rows.length && rows[0] && rows[0].data){
+        writeMirror(rows[0].data);
+        return rows[0].data;
+      }
+      // Read SUCCEEDED and returned zero rows → genuinely missing. Seed ONCE
+      // with insert (not upsert), so we can never silently overwrite a row.
+      try{
+        const ins = await supa.from("portfolio").insert({ id:ROW, data:SEED_DOC });
+        if (ins.error) throw ins.error;
+      }catch(e){ console.error("seed insert failed", e); throw new Error("read-failed"); }
+      const seeded = JSON.parse(JSON.stringify(SEED_DOC));
+      writeMirror(seeded);
+      return seeded;
     }
     if (!mem) mem = JSON.parse(JSON.stringify(SEED_DOC));
+    writeMirror(mem);
     return mem;
   },
   async save(d){
-    if (supa){ try{ await supa.from("portfolio").upsert({ id:ROW, data:d, updated_at:new Date().toISOString() }); }catch(e){ console.error(e); } }
-    else mem = d;
+    if (supa){
+      try{
+        const { error } = await supa.from("portfolio").upsert({ id:ROW, data:d, updated_at:new Date().toISOString() });
+        if (error) throw error;
+        writeMirror(d);   // mirror only after a confirmed-good save
+      }catch(e){ console.error("save failed", e); }
+    } else { mem = d; writeMirror(d); }
   }
 };
 
@@ -309,6 +410,7 @@ function Sheet({ title, onClose, children }){
 function App(){
   const [doc, setDoc] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [tab, setTab] = useState("portfolio");   // portfolio | history
   const [parent, setParent] = useState(false);
   const [sheet, setSheet] = useState(null);
@@ -319,8 +421,22 @@ function App(){
 
   const commit = useCallback(next => { setDoc(next); Store.save(next); }, []);
 
-  const pull = useCallback(async (silent)=>{ const d = await Store.load(); setDoc(d); if(!silent) flash("Synced"); }, []);
-  useEffect(()=>{ (async()=>{ setDoc(await Store.load()); setLoading(false); })(); }, []);
+  // Background/manual sync. On failure we KEEP showing the current data
+  // (never wipe a working screen); a manual pull just flashes a notice.
+  const pull = useCallback(async (silent)=>{
+    try{ const d = await Store.load(); setDoc(d); if(!silent) flash("Synced"); }
+    catch(e){ if(!silent) flash("Couldn't sync — will retry"); }
+  }, []);
+
+  // Initial load. A read failure shows the retry screen — NEVER the setup
+  // wizard — so a transient error can never lead to seeding over real data.
+  const initialLoad = useCallback(async ()=>{
+    setLoading(true); setLoadError(false);
+    try{ setDoc(await Store.load()); }
+    catch(e){ setLoadError(true); }
+    setLoading(false);
+  }, []);
+  useEffect(()=>{ initialLoad(); }, [initialLoad]);
 
   // keep devices in sync (remote only)
   useEffect(()=>{
@@ -362,6 +478,7 @@ function App(){
   } /* eslint-disable-next-line */ }, [loading]);
 
   if (loading) return <Center>Loading…</Center>;
+  if (loadError) return <RetryScreen onRetry={initialLoad}/>;
   if (!doc || !doc.setupComplete) return <Setup onDone={commit}/>;
 
   const m = metrics(doc);
@@ -460,6 +577,43 @@ function nameTitle(t){ return t==="portfolio"?"Asher's Portfolio":"History"; }
 
 /* ── small chrome ── */
 function Center({ children }){ return <div style={{height:"80vh", display:"grid", placeItems:"center", color:"var(--sub)"}}>{children}</div>; }
+
+/* download any JS object as a pretty-printed .json file */
+function downloadJSON(obj, filename){
+  try{
+    const blob = new Blob([JSON.stringify(obj, null, 2)], { type:"application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  }catch(e){ console.error("download failed", e); return false; }
+}
+
+/* Shown when the initial load fails. Deliberately NOT the setup wizard, and
+   it never writes anything — just lets the user retry, with an optional
+   download of this device's last local backup as a last resort. */
+function RetryScreen({ onRetry }){
+  const local = Store.readMirror();
+  return (
+    <div style={{maxWidth:420, margin:"0 auto", padding:"56px 24px", textAlign:"center"}}>
+      <div style={{fontSize:42, marginBottom:14}}>📡</div>
+      <div style={{fontFamily:"Fraunces, serif", fontSize:24, fontWeight:600, marginBottom:10}}>Couldn’t reach your data</div>
+      <div style={{fontSize:15, color:"var(--sub)", lineHeight:1.55, marginBottom:22}}>
+        We couldn’t load the account from the server just now. <b style={{color:"var(--up)"}}>Nothing was changed</b> — your
+        positions and history are safe on the server. This is almost always a temporary connection problem.
+      </div>
+      <button className="btn btn-pri" style={{width:"100%", marginBottom:10}} onClick={onRetry}>Try again</button>
+      {local && (
+        <button className="btn btn-ghost" style={{width:"100%"}}
+          onClick={()=>downloadJSON(local, "portfolio-local-backup.json")}>
+          Download this device’s last backup
+        </button>
+      )}
+    </div>
+  );
+}
 function IconBtn({ children, onClick, active, badge }){ return (
   <button onClick={onClick} style={{position:"relative", background:active?"var(--accent-soft)":"var(--surface)", border:`1px solid ${active?"var(--accent)":"var(--border)"}`,
     borderRadius:12, padding:10, boxShadow:"var(--shadow)"}}>
@@ -877,6 +1031,7 @@ function Settings({ doc, parent, commit, flash, onClose, onUnlock, onDeposit }){
       <button className="btn btn-pri" style={{width:"100%", marginTop:10}} onClick={()=>{commit({...doc, apiKey:key.trim()}); flash("Key saved");}}>Save key</button>
     </Sec>
     <Sec title="Positions"><PosEditor doc={doc} commit={commit} flash={flash}/></Sec>
+    <Sec title="Backup"><BackupSec doc={doc} commit={commit} flash={flash}/></Sec>
     <Sec title="Security">
       <button className="btn btn-ghost" style={{width:"100%"}} onClick={()=>{
         const cur=prompt("Current PIN?"); if(cur!==doc.parentPin){flash("Wrong PIN"); return;}
@@ -889,6 +1044,43 @@ function Settings({ doc, parent, commit, flash, onClose, onUnlock, onDeposit }){
   </Sheet>;
 }
 function Sec({ title, children }){ return <div style={{marginBottom:22}}><div className="lbl" style={{textTransform:"uppercase", letterSpacing:.5, marginBottom:10}}>{title}</div>{children}</div>; }
+
+/* Export the whole doc to a file, or restore from one. Import REPLACES the
+   account (and syncs to Supabase via commit), so it's gated behind a confirm
+   and a minimal shape check — we never write an unrecognized file over data. */
+function BackupSec({ doc, commit, flash }){
+  const fileRef = useRef();
+  const onPick = (e)=>{
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";                 // let the same file be picked again
+    if (!file) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try{
+        const d = JSON.parse(r.result);
+        if (!d || !Array.isArray(d.positions) || !Array.isArray(d.transactions))
+          throw new Error("bad shape");
+        if (!confirm("Import this backup? It will REPLACE the current account on all devices.")) return;
+        commit(d);
+        flash("Backup imported");
+      }catch(err){ console.error(err); flash("That file isn’t a valid backup"); }
+    };
+    r.readAsText(file);
+  };
+  return <>
+    <div style={{fontSize:12.5, color:"var(--sub)", marginBottom:10, lineHeight:1.5}}>
+      Download a copy of all positions, transactions and cash — or restore from one.
+    </div>
+    <button className="btn btn-ghost" style={{width:"100%", marginBottom:9}}
+      onClick={()=> downloadJSON(doc, "portfolio-backup-"+new Date().toISOString().slice(0,10)+".json") ? flash("Backup downloaded") : flash("Couldn’t download")}>
+      Export backup
+    </button>
+    <button className="btn btn-ghost" style={{width:"100%"}} onClick={()=>fileRef.current && fileRef.current.click()}>
+      Import backup…
+    </button>
+    <input ref={fileRef} type="file" accept="application/json,.json" style={{display:"none"}} onChange={onPick}/>
+  </>;
+}
 function PosEditor({ doc, commit, flash }){
   const [t,setT]=useState(""); const [s,setS]=useState(""); const [c,setC]=useState("");
   const add=()=>{ const tk=t.trim().toUpperCase(), shr=parseFloat(s), co=parseFloat(c);
